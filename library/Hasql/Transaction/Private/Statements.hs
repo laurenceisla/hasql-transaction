@@ -17,11 +17,11 @@ beginTransaction isolation mode peparable =
   A.Statement (D.beginTransaction isolation mode) B.noParams C.noResult peparable
 
 commitTransaction :: Bool -> A.Statement () ()
-commitTransaction  =
+commitTransaction preparable =
   A.Statement "COMMIT" B.noParams C.noResult peparable
 
 abortTransaction :: Bool -> A.Statement () ()
-abortTransaction =
+abortTransaction preparable =
   A.Statement "ABORT" B.noParams C.noResult peparable
 
 

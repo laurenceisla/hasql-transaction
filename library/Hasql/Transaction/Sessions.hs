@@ -1,6 +1,7 @@
 module Hasql.Transaction.Sessions
 (
   transaction,
+  transactionPreparable,
   -- * Transaction settings
   C.Mode(..),
   C.IsolationLevel(..),
@@ -20,7 +21,10 @@ transaction isolation mode transaction =
   A.run transaction isolation mode True
 
 -- |
--- Execute the transaction using the provided isolation level and mode without prepared statements.
-transactionUnprepared :: C.IsolationLevel -> C.Mode -> A.Transaction a -> B.Session a
-transactionUnprepared isolation mode transaction =
-  A.run transaction isolation mode False
+-- Execute the transaction using the provided isolation level and mode,
+-- and specifying if the BEGIN, COMMIT and ABORT statements should be prepared or not.
+--
+-- Helps with transaction pooling due to its incompatibility with prepared statements.
+transactionPreparable :: C.IsolationLevel -> C.Mode -> A.Transaction a -> Bool -> B.Session a
+transactionPreparable isolation mode transaction preparable =
+  A.run transaction isolation mode preparable
