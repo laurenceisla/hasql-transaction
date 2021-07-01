@@ -17,4 +17,10 @@ import qualified Hasql.Transaction.Private.Model as C
 {-# INLINE transaction #-}
 transaction :: C.IsolationLevel -> C.Mode -> A.Transaction a -> B.Session a
 transaction isolation mode transaction =
-  A.run transaction isolation mode
+  A.run transaction isolation mode True
+
+-- |
+-- Execute the transaction using the provided isolation level and mode without prepared statements.
+transactionUnprepared :: C.IsolationLevel -> C.Mode -> A.Transaction a -> B.Session a
+transactionUnprepared isolation mode transaction =
+  A.run transaction isolation mode False
