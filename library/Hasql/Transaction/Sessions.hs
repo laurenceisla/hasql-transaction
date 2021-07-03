@@ -8,6 +8,7 @@ module Hasql.Transaction.Sessions
 )
 where
 
+import Data.Bool
 import qualified Hasql.Transaction.Private.Transaction as A
 import qualified Hasql.Session as B
 import qualified Hasql.Transaction.Private.Model as C
@@ -25,6 +26,7 @@ transaction isolation mode transaction =
 -- and specifying if the BEGIN, COMMIT and ABORT statements should be prepared or not.
 --
 -- Helps with transaction pooling due to its incompatibility with prepared statements.
+{-# INLINE transactionPreparable #-}
 transactionPreparable :: C.IsolationLevel -> C.Mode -> A.Transaction a -> Bool -> B.Session a
 transactionPreparable isolation mode transaction preparable =
   A.run transaction isolation mode preparable
