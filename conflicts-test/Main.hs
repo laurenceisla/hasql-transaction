@@ -37,13 +37,13 @@ main =
               ]
     release (connection1, connection2) =
       do
-        transaction connection1 E.dropSchema
+        transactionRetry connection1 E.dropSchema
         A.release connection1
         A.release connection2
     use (connection1, connection2) =
       do
-        try (transaction connection1 E.dropSchema) :: IO (Either SomeException ())
-        transaction connection1 E.createSchema
+        try (transactionRetry connection1 E.dropSchema) :: IO (Either SomeException ())
+        transactionRetry connection1 E.createSchema
         success <- fmap and (traverse runTest tests)
         if success
           then exitSuccess
@@ -52,16 +52,22 @@ main =
         runTest test =
           test connection1 connection2
         tests =
-          [readAndWriteTransactionsTest, transactionsTest, transactionAndQueryTest]
+          [readAndWriteTransactionsTest, transactionsTest, transactionsTestNoRetry, transactionAndQueryTest]
 
 session :: A.Connection -> B.Session a -> IO a
 session connection session =
   B.run session connection
     >>= either (fail . show) return
 
-transaction :: A.Connection -> C.Transaction a -> IO a
-transaction connection transaction =
-  session connection (G.transaction G.RepeatableRead G.Write transaction)
+transaction :: Bool -> A.Connection -> C.Transaction a -> IO a
+transaction retry connection transaction =
+  session connection (G.transaction G.RepeatableRead G.Write retry transaction)
+
+transactionRetry :: A.Connection -> C.Transaction a -> IO a
+transactionRetry = transaction True
+
+transactionNoRetry :: A.Connection -> C.Transaction a -> IO a
+transactionNoRetry = transaction False
 
 type Test =
   A.Connection -> A.Connection -> IO Bool
@@ -71,8 +77,8 @@ transactionsTest connection1 connection2 =
   do
     id1 <- session connection1 (B.statement 0 D.createAccount)
     id2 <- session connection1 (B.statement 0 D.createAccount)
-    async1 <- F.async (replicateM_ 1000 (transaction connection1 (E.transfer id1 id2 1)))
-    async2 <- F.async (replicateM_ 1000 (transaction connection2 (E.transfer id1 id2 1)))
+    async1 <- F.async (replicateM_ 1000 (transactionRetry connection1 (E.transfer id1 id2 1)))
+    async2 <- F.async (replicateM_ 1000 (transactionRetry connection2 (E.transfer id1 id2 1)))
     F.wait async1
     F.wait async2
     balance1 <- session connection1 (B.statement id1 D.getBalance)
@@ -81,13 +87,25 @@ transactionsTest connection1 connection2 =
     traceShowM balance2
     return (balance1 == Just 2000 && balance2 == Just (-2000))
 
+transactionsTestNoRetry :: Test
+transactionsTestNoRetry connection1 connection2 =
+  do
+    id1 <- session connection1 (B.statement 0 D.createAccount)
+    id2 <- session connection1 (B.statement 0 D.createAccount)
+    async1 <- F.async (replicateM_ 1000 (transactionNoRetry connection1 (E.transfer id1 id2 1)))
+    async2 <- F.async (replicateM_ 1000 (transactionNoRetry connection2 (E.transfer id1 id2 1)))
+    result1 <- F.waitCatch async1
+    result2 <- F.waitCatch async2
+    -- TODO: explicitly verify that the error code is 40001
+    return $ isLeft result1 || isLeft result2
+
 readAndWriteTransactionsTest :: Test
 readAndWriteTransactionsTest connection1 connection2 =
   do
     id1 <- session connection1 (B.statement 0 D.createAccount)
     id2 <- session connection1 (B.statement 0 D.createAccount)
-    async1 <- F.async (replicateM_ 1000 (transaction connection1 (E.transfer id1 id2 1)))
-    async2 <- F.async (replicateM_ 1000 (transaction connection2 (C.statement id1 D.getBalance)))
+    async1 <- F.async (replicateM_ 1000 (transactionRetry connection1 (E.transfer id1 id2 1)))
+    async2 <- F.async (replicateM_ 1000 (transactionRetry connection2 (C.statement id1 D.getBalance)))
     F.wait async1
     F.wait async2
     balance1 <- session connection1 (B.statement id1 D.getBalance)
@@ -101,7 +119,7 @@ transactionAndQueryTest connection1 connection2 =
   do
     id1 <- session connection1 (B.statement 0 D.createAccount)
     id2 <- session connection1 (B.statement 0 D.createAccount)
-    async1 <- F.async (transaction connection1 (E.transferTimes 200 id1 id2 1))
+    async1 <- F.async (transactionRetry connection1 (E.transferTimes 200 id1 id2 1))
     async2 <- F.async (session connection2 (replicateM_ 200 (B.statement (id1, 1) D.modifyBalance)))
     F.wait async1
     F.wait async2
